@@ -131,6 +131,49 @@ body {
   outline-offset: 2px;
 }
  
+/* Personagens com destaque ao passar o mouse (páginas interativas) */
+/* Ver PERSONAGENS_INTERATIVOS no script.js */
+ 
+.pagina-imagem-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+ 
+/* Área invisível que só serve pra detectar o mouse — nunca aparece na
+   tela. Sua posição/tamanho vêm de personagem.area, no script.js. */
+.personagem-hotspot {
+  position: absolute;
+  cursor: pointer;
+  /* z-index maior que a camada cheia, pra continuar recebendo o hover
+     mesmo depois que a camada cheia aparecer por cima dela. */
+  z-index: 2;
+}
+ 
+/* A página gêmea inteira, sobreposta à imagem original. Como as duas
+   imagens são idênticas fora do personagem destacado, mostrar a
+   página inteira (em vez de um recorte) dá o mesmo resultado visual. */
+.personagem-camada {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  opacity: 0;
+  /* pointer-events: none pra nunca bloquear o hotspot que fica embaixo
+     dela — quem detecta o mouse é sempre o hotspot, nunca a camada. */
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+ 
+/* O coração do efeito: quando o hotspot é "hovered", a camada cheia
+   que vem logo depois dele no HTML (irmã adjacente) fica visível. */
+.personagem-hotspot:hover + .personagem-camada {
+  opacity: 1;
+}
+ 
 @media (max-width: 640px) {
   .topbar {
     padding: 0.9rem 1rem;
@@ -154,6 +197,10 @@ body {
     transition: none;
     opacity: 1;
     transform: none;
+  }
+ 
+  .personagem-camada {
+    transition: none;
   }
 }
  
