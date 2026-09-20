@@ -25,66 +25,38 @@ body {
   font-family: var(--fonte-corpo);
 }
  
-/* Cabeçalho fixo */
- 
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 1.1rem 1.5rem;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid var(--linha);
-}
- 
-.title {
-  font-family: var(--fonte-titulo);
-  font-size: 1.1rem;
-  letter-spacing: 0.01em;
-  margin: 0;
-  color: var(--texto);
-}
- 
-.counter {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
-  color: var(--texto-fraco);
-}
- 
-#pagina-visivel {
-  color: var(--tinta);
-  font-weight: 600;
-}
- 
 /* Rolagem das páginas */
  
 .leitor {
   display: flex;
   flex-direction: column;
   align-items: center;
-  scroll-snap-type: y proximity;
+  /* "mandatory" (em vez de "proximity") porque agora o scroll do mouse
+     é controlado inteiramente por controlarRolagemDoMouse() no
+     script.js, pulando sempre uma página inteira por vez — o snap
+     "mandatory" garante que toque e trackpad tenham esse mesmo
+     comportamento de encaixe total, sem parar no meio de uma página. */
+  scroll-snap-type: y mandatory;
 }
  
 .pagina {
   width: 100%;
-  min-height: calc(100vh - 60px);
+  height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
   scroll-snap-align: center;
 }
  
 .pagina img {
   display: block;
+  /* Sem header e sem padding, a imagem pode ocupar o tamanho máximo
+     da tela, respeitando a proporção original (por isso max- em vez
+     de width/height fixos, que distorceriam a imagem). */
   max-width: 100%;
-  max-height: calc(100vh - 110px);
+  max-height: 100vh;
   width: auto;
   height: auto;
-  box-shadow: 0 0 0 1px var(--linha), 0 12px 32px rgba(0, 0, 0, 0.08);
   opacity: 0;
   transform: translateY(16px);
   transition: opacity 0.7s ease, transform 0.7s ease;
@@ -133,13 +105,13 @@ body {
  
 /* Personagens com destaque ao passar o mouse (páginas interativas) */
 /* Ver PERSONAGENS_INTERATIVOS no script.js */
- 
+
 .pagina-imagem-wrap {
   position: relative;
   display: inline-block;
   line-height: 0;
 }
- 
+
 /* Área invisível que só serve pra detectar o mouse — nunca aparece na
    tela. Sua posição/tamanho vêm de personagem.area, no script.js. */
 .personagem-hotspot {
@@ -149,7 +121,7 @@ body {
      mesmo depois que a camada cheia aparecer por cima dela. */
   z-index: 2;
 }
- 
+
 /* A página gêmea inteira, sobreposta à imagem original. Como as duas
    imagens são idênticas fora do personagem destacado, mostrar a
    página inteira (em vez de um recorte) dá o mesmo resultado visual. */
@@ -167,23 +139,13 @@ body {
   pointer-events: none;
   transition: opacity 0.35s ease;
 }
- 
+
 /* O coração do efeito: quando o hotspot é "hovered", a camada cheia
    que vem logo depois dele no HTML (irmã adjacente) fica visível. */
 .personagem-hotspot:hover + .personagem-camada {
   opacity: 1;
 }
- 
-@media (max-width: 640px) {
-  .topbar {
-    padding: 0.9rem 1rem;
-  }
- 
-  .title {
-    font-size: 0.95rem;
-  }
-}
- 
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -198,7 +160,7 @@ body {
     opacity: 1;
     transform: none;
   }
- 
+
   .personagem-camada {
     transition: none;
   }

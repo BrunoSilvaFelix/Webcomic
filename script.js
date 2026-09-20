@@ -40,18 +40,6 @@ const MAPA_TRILHAS = {
 // Cada personagem aponta pra uma página "gêmea" (paginaDestaque) que é
 // visualmente idêntica à original, exceto por aquele personagem em
 // específico (ex: a página 21 é igual à 13, só que com o bebê com uma
-// silhueta azul). Ao passar o mouse, mostramos essa página gêmea
-// recortada (clip-path) só na área daquele personagem — o resto da
-// imagem continua sendo a página original por baixo.
-//
-// "pontos" é a área (em % da imagem) que contorna o personagem — use
-// https://bennettfeely.com/clippy/ pra desenhar/ajustar visualmente se
-// quiser refinar o contorno.
-// Personagens com destaque ao passar o mouse, por página.
-//
-// Cada personagem aponta pra uma página "gêmea" (paginaDestaque) que é
-// visualmente idêntica à original, exceto por aquele personagem em
-// específico (ex: a página 21 é igual à 13, só que com o bebê com uma
 // silhueta azul). Ao passar o mouse numa área retangular aproximada
 // (area) sobre aquele personagem, a página gêmea INTEIRA aparece por
 // cima — como as duas imagens são idênticas fora do personagem
@@ -93,8 +81,6 @@ const PERSONAGENS_INTERATIVOS = {
  
 // ---------- Elementos ----------
 const leitorEl = document.getElementById('leitor');
-const paginaVisivelEl = document.getElementById('pagina-visivel');
-const paginaTotalEl = document.getElementById('pagina-total');
 const btnTopo = document.getElementById('btn-topo');
 const avisoAudioEl = document.getElementById('aviso-audio');
  
@@ -105,6 +91,7 @@ let arquivoTrilhaAtual = null;
  
 // ---------- Estado da navegação ----------
 let paginaAtual = 1;
+let bloqueadoPorRolagem = false; // evita disparar várias páginas de uma vez no mesmo gesto de scroll
  
 // ---------- Funções ----------
 function caminhoDaPagina(numero) {
@@ -228,7 +215,6 @@ function observarPaginaVisivel() {
         if (entrada.isIntersecting) {
           const numero = Number(entrada.target.dataset.pagina);
           paginaAtual = numero;
-          paginaVisivelEl.textContent = numero;
           tocarFaixaDaPagina(numero);
         }
       });
@@ -272,10 +258,48 @@ function controlarSetasDoTeclado() {
   });
 }
  
+/**
+ * Faz qualquer scroll do mouse (por menor que seja) pular direto pra
+ * a página inteira seguinte ou anterior, em vez de rolar aos poucos.
+ *
+ * { passive: false } é necessário pra poder chamar preventDefault() —
+ * sem isso o navegador ignora a chamada e rola do jeito normal dele
+ * ao mesmo tempo que tentamos ir pra outra página, dando um scroll
+ * "duplo" e bagunçado.
+ *
+ * bloqueadoPorRolagem existe porque um único gesto de scroll do mouse
+ * dispara várias vezes o evento "wheel" seguidas — sem esse bloqueio,
+ * a página pularia várias páginas de uma vez só num movimento rápido
+ * do scroll. Ele é liberado de novo depois de 700ms, tempo aproximado
+ * da animação suave do scrollIntoView em irParaPagina().
+ */
+function controlarRolagemDoMouse() {
+  window.addEventListener(
+    'wheel',
+    (evento) => {
+      evento.preventDefault();
+ 
+      if (bloqueadoPorRolagem) return;
+      bloqueadoPorRolagem = true;
+ 
+      if (evento.deltaY > 0) {
+        irParaPagina(paginaAtual + 1);
+      } else if (evento.deltaY < 0) {
+        irParaPagina(paginaAtual - 1);
+      }
+ 
+      setTimeout(() => {
+        bloqueadoPorRolagem = false;
+      }, 700);
+    },
+    { passive: false }
+  );
+}
+ 
 // ---------- Inicialização ----------
-paginaTotalEl.textContent = CONFIG.totalPaginas;
 criarPaginas();
 observarPaginaVisivel();
 controlarBotaoTopo();
 controlarSetasDoTeclado();
+controlarRolagemDoMouse();
 document.addEventListener('click', desbloquearAudio, { once: true });
