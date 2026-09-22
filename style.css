@@ -105,13 +105,13 @@ body {
  
 /* Personagens com destaque ao passar o mouse (páginas interativas) */
 /* Ver PERSONAGENS_INTERATIVOS no script.js */
-
+ 
 .pagina-imagem-wrap {
   position: relative;
   display: inline-block;
   line-height: 0;
 }
-
+ 
 /* Área invisível que só serve pra detectar o mouse — nunca aparece na
    tela. Sua posição/tamanho vêm de personagem.area, no script.js. */
 .personagem-hotspot {
@@ -121,7 +121,7 @@ body {
      mesmo depois que a camada cheia aparecer por cima dela. */
   z-index: 2;
 }
-
+ 
 /* A página gêmea inteira, sobreposta à imagem original. Como as duas
    imagens são idênticas fora do personagem destacado, mostrar a
    página inteira (em vez de um recorte) dá o mesmo resultado visual. */
@@ -139,13 +139,13 @@ body {
   pointer-events: none;
   transition: opacity 0.35s ease;
 }
-
+ 
 /* O coração do efeito: quando o hotspot é "hovered", a camada cheia
    que vem logo depois dele no HTML (irmã adjacente) fica visível. */
 .personagem-hotspot:hover + .personagem-camada {
   opacity: 1;
 }
-
+ 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -160,10 +160,50 @@ body {
     opacity: 1;
     transform: none;
   }
-
+ 
   .personagem-camada {
     transition: none;
   }
+}
+ 
+/* Tela de "fim de ramificação" — aparece no final da história de cada
+   personagem (menos a do Encapuzado, que segue direto até o fim da
+   história principal). Ver criarBlocoFimRamificacao() no script.js. */
+ 
+.pagina-fim {
+  flex-direction: column;
+  gap: 1.5rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+ 
+.pagina-fim-titulo {
+  font-family: var(--fonte-titulo);
+  font-size: 1.4rem;
+  margin: 0;
+  color: var(--texto);
+}
+ 
+.btn-selecao {
+  font-family: var(--fonte-corpo);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--tinta);
+  border: none;
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+ 
+.btn-selecao:hover {
+  opacity: 0.85;
+}
+ 
+.btn-selecao:focus-visible {
+  outline: 2px solid var(--tinta);
+  outline-offset: 2px;
 }
  
 /* Aviso de ativação de som */
@@ -186,3 +226,9 @@ body {
   opacity: 0;
   visibility: hidden;
 }
+
+
+
+
+
+
