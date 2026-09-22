@@ -53,6 +53,7 @@ const MAPA_TRILHAS = {
   18: 'trilha_frenetica.wav',
   19: null,
   20: null,
+  21: 'micro_interacoes/mocroint-bebe.wav',
 
 };
  
@@ -81,30 +82,35 @@ const PERSONAGENS_INTERATIVOS = {
       paginaDestaque: 21,
       ramificacao: 'bebe',
       area: { left: '5%', top: '63%', width: '23%', height: '17%' },
+      somHover: 'micro_interacoes/microint-bebe.wav', // toca ao passar o mouse
     },
     {
       nome: 'Velho',
       paginaDestaque: 22,
       ramificacao: 'velho',
       area: { left: '16%', top: '37%', width: '25%', height: '30%' },
+      somHover: 'micro_interacoes/microint-veio.wav',
     },
     {
       nome: 'Estátua',
       paginaDestaque: 23,
       ramificacao: 'estatua',
       area: { left: '45%', top: '8%', width: '21%', height: '28%' },
+      somHover: 'micro_interacoes/microint-estatua.wav',
     },
     {
       nome: 'Bandido',
       paginaDestaque: 24,
       ramificacao: null, // continua a história principal
       area: { left: '55%', top: '33%', width: '20%', height: '44%' },
+      somHover: 'micro_interacoes/microint-bandido.wav',
     },
     {
       nome: 'Chapeuzinho',
       paginaDestaque: 25,
       ramificacao: 'chapeuzinho',
       area: { left: '81%', top: '40%', width: '17%', height: '33%' },
+      somHover: 'micro_interacoes/microint-chapeu.wav',
     },
   ],
 };
@@ -116,6 +122,7 @@ const avisoAudioEl = document.getElementById('aviso-audio');
  
 // ---------- Estado do áudio ----------
 const audioEl = new Audio(); // toca uma vez só (sem loop)
+const audioHoverEl = new Audio(); // efeito sonoro ao passar o mouse num personagem — toca por cima da trilha, sem interromper ela
 let audioDesbloqueado = false;
 let arquivoTrilhaAtual = null;
  
@@ -181,6 +188,25 @@ function desbloquearAudio() {
 }
  
 /**
+ * Toca o som de um personagem ao passar o mouse (personagem.somHover).
+ * Usa audioHoverEl — um elemento separado da trilha de fundo — então
+ * os dois tocam ao mesmo tempo, um por cima do outro, sem se
+ * interromper.
+ */
+function tocarSomHover(nomeArquivo) {
+  if (!nomeArquivo || !audioDesbloqueado) return;
+ 
+  audioHoverEl.src = `${CONFIG.pastaAudio}/${nomeArquivo}`;
+  audioHoverEl.currentTime = 0; // garante que sempre recomeça do zero a cada hover
+  audioHoverEl.play().catch(() => {});
+}
+ 
+/** Para o som de hover assim que o mouse sai de cima do personagem. */
+function pararSomHover() {
+  audioHoverEl.pause();
+}
+
+/**
  * Cria as duas camadas de destaque de um personagem:
  *  1. o "hotspot" — uma área retangular invisível que detecta o mouse
  *     E o clique (personagem.area define onde ela fica)
@@ -212,6 +238,9 @@ function criarDestaquePersonagem(personagem) {
       seguirParaRamificacao(PAGINAS_HISTORIA_PRINCIPAL, null);
     }
   });
+
+  hotspot.addEventListener('mouseenter', () => tocarSomHover(personagem.somHover));
+  hotspot.addEventListener('mouseleave', pararSomHover);
  
   const camada = document.createElement('div');
   camada.className = 'personagem-camada';
