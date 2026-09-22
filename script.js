@@ -9,23 +9,42 @@ const CONFIG = {
   pastaAudio: 'trilha',
 };
  
-// Trilha sonora de cada página. Use o nome exato do arquivo dentro da
-// pasta "trilha" (com a extensão, ex: '.wav'). Deixe "null" nas páginas
-// que não devem ter música.
+// Trilha sonora de cada página. Deixe "null" nas páginas sem música.
+//
+// Cada entrada pode ser:
+//   - uma STRING com o nome do arquivo -> toca em loop, do início ao
+//     fim do arquivo inteiro (comportamento padrão, mais simples);
+//   - um OBJETO, para controle fino:
+//       arquivo    - nome do arquivo (obrigatório)
+//       loop       - true (padrão) ou false. Se false, toca uma vez
+//                    e para sozinho (fica em silêncio até a próxima
+//                    página com trilha definida)
+//       loopStart  - segundo em que o loop começa (padrão: 0)
+//       loopEnd    - segundo em que o loop termina/volta pro início
+//                    (padrão: o arquivo inteiro)
+//       efeito     - true para efeitos avulsos (explosão, grito,
+//                    record-scratch...): toca uma vez, POR CIMA da
+//                    trilha de fundo atual, sem interrompê-la. Nesse
+//                    caso loop/loopStart/loopEnd são ignorados.
+//
+// Repetir o mesmo "arquivo" em páginas seguidas com o MESMO
+// loopStart/loopEnd continua sem reiniciar o loop. Se o loopStart/
+// loopEnd for diferente, é tratado como uma trilha diferente (troca
+// com crossfade normalmente).
 const MAPA_TRILHAS = {
   1: null,
   2: 'antecipacao.wav',
-  3: 'tema_carcara-sombrio-001.wav',
-  4: 'record-scratch-2.mp3',
+  3: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 2.5, loopEnd: 40 },
+  4: { arquivo: 'sfx/record-scratch-2.mp3', efeito: true, pararFundo: true },
   5: null,
   6: 'trilha_fundo_principal.wav',
   7: 'trilha_fundo_principal.wav',
-  8: null,
-  9: 'tema_carcara-sombrio-001.wav',
-  10: null,
+  8: 'sfx/radio_policia.wav',
+  9: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 0, loopEnd: 15 },
+  10: 'sfx/transito_policia.wav',
   11: 'trilha_fundo_principal.wav',
-  12: 'trilha_fundo_principal.wav',
-  13: 'carcara-suspense.wav',
+  12: {arquivo:'sfx/harp.wav',efeito: true, pararFundo:true},
+  13: { arquivo: 'carcara_suspense.wav', loopStart: 0, loopEnd: 31 },
   14: 'trilha_fundo_principal.wav',
   15: null,
   16: 'trilha_fundo_principal.wav',
@@ -34,7 +53,7 @@ const MAPA_TRILHAS = {
   19: null,
   20: null,
 };
- 
+
 // Personagens com destaque ao passar o mouse, por página.
 //
 // Cada personagem aponta pra uma página "gêmea" (paginaDestaque) que é
@@ -85,9 +104,12 @@ const btnTopo = document.getElementById('btn-topo');
 const avisoAudioEl = document.getElementById('aviso-audio');
  
 // ---------- Estado do áudio ----------
-const audioEl = new Audio(); // toca uma vez só (sem loop)
+let ctx = null;
+let masterGain = null;
 let audioDesbloqueado = false;
-let arquivoTrilhaAtual = null;
+let paginaPendente = null; // página atual, tocada assim que o áudio for desbloqueado
+let trilhaDeFundo = null; // { source, gain, chave } — só a trilha contínua
+const cacheDeBuffers = new Map(); // nomeArquivo -> Promise<AudioBuffer>, evita baixar 2x
  
 // ---------- Estado da navegação ----------
 let paginaAtual = 1;
@@ -99,38 +121,166 @@ function caminhoDaPagina(numero) {
   return `${CONFIG.pasta}/${CONFIG.prefixo}${numeroFormatado}.${CONFIG.extensao}`;
 }
  
+function garantirContexto() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.connect(ctx.destination);
+  }
+  return ctx;
+}
+
+// Busca e decodifica um arquivo de áudio, guardando em cache para não
+// baixar/decodificar de novo se a mesma faixa for usada em outra página.
+function carregarBuffer(nomeArquivo) {
+  if (cacheDeBuffers.has(nomeArquivo)) {
+    return cacheDeBuffers.get(nomeArquivo);
+  }
+
+  const promessa = fetch(`${CONFIG.pastaAudio}/${nomeArquivo}`)
+    .then((resposta) => resposta.arrayBuffer())
+    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer));
+
+  cacheDeBuffers.set(nomeArquivo, promessa);
+  return promessa;
+}
+
+// Aceita tanto uma string simples ('arquivo.wav') quanto um objeto
+// { arquivo, loop, loopStart, loopEnd, efeito }, e sempre devolve o
+// objeto completo com os padrões preenchidos.
+function normalizarTrilha(entrada) {
+  if (!entrada) return null;
+
+  const config = typeof entrada === 'string' ? { arquivo: entrada } : entrada;
+
+  return {
+    arquivo: config.arquivo,
+    loop: config.loop ?? true,
+    loopStart: config.loopStart ?? 0,
+    loopEnd: config.loopEnd ?? null, // null = até o fim do buffer, resolvido depois de carregar
+    efeito: config.efeito ?? false,
+    pararFundo: config.pararFundo ?? false,
+  };
+}
+
+// Identifica de forma única "este arquivo tocando este trecho" — duas
+// páginas com o mesmo arquivo mas loopStart/loopEnd diferentes contam
+// como trilhas diferentes (troca com crossfade); com o mesmo trecho,
+// contam como a mesma trilha (não reinicia).
+function chaveDaTrilha(config) {
+  return `${config.arquivo}|${config.loopStart}|${config.loopEnd}`;
+}
+
+// Toca a trilha de fundo (com ou sem loop, com ou sem recorte de
+// trecho), com crossfade suave a partir do que estiver tocando.
+async function tocarTrilhaDeFundo(config) {
+  const chave = chaveDaTrilha(config);
+  if (trilhaDeFundo?.chave === chave) return; // já tocando esse trecho, não reinicia
+
+  const anterior = trilhaDeFundo;
+  trilhaDeFundo = null; // evita corrida se a página mudar de novo antes do buffer carregar
+
+  const buffer = await carregarBuffer(config.arquivo);
+
+  // Se o usuário já saiu dessa página enquanto o arquivo carregava,
+  // descarta — outra chamada mais recente já deve estar em curso.
+  const configAtual = normalizarTrilha(MAPA_TRILHAS[paginaAtual]);
+  if (!configAtual || chaveDaTrilha(configAtual) !== chave) return;
+
+  const loopEnd = config.loopEnd ?? buffer.duration;
+
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  source.loop = config.loop;
+  if (config.loop) {
+    source.loopStart = config.loopStart;
+    source.loopEnd = loopEnd;
+  }
+  source.connect(gain).connect(masterGain);
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.8);
+  source.start(0, config.loop ? config.loopStart : 0);
+
+  if (!config.loop) {
+    // Sem loop: ao terminar, libera o "slot" de fundo pra tocar de
+    // novo se o usuário revisitar a página (senão o sistema pensaria
+    // que essa trilha ainda está tocando).
+    source.onended = () => {
+      if (trilhaDeFundo?.source === source) trilhaDeFundo = null;
+    };
+  }
+
+  if (anterior) {
+    anterior.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+    anterior.source.stop(ctx.currentTime + 0.9);
+  }
+
+  trilhaDeFundo = { source, gain, chave };
+}
+
+function pararTrilhaDeFundo() {
+  if (!trilhaDeFundo) return;
+  const atual = trilhaDeFundo;
+  trilhaDeFundo = null;
+  atual.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+  atual.source.stop(ctx.currentTime + 0.9);
+}
+
+// Toca um efeito avulso uma única vez. Por padrão soa por cima da
+// trilha de fundo, sem afetá-la; com pararFundo: true, corta a
+// trilha de fundo em seco antes de tocar (efeito "record scratch").
+async function tocarEfeitoUmaVez(config) {
+  if (config.pararFundo && trilhaDeFundo) {
+    const atual = trilhaDeFundo;
+    trilhaDeFundo = null;
+    atual.gain.gain.setValueAtTime(0, ctx.currentTime); // corte seco, sem fade
+    atual.source.stop();
+  }
+
+  const buffer = await carregarBuffer(config.arquivo);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = false;
+  source.connect(masterGain);
+  source.start(0);
+}
+
 function tocarFaixaDaPagina(numeroPagina) {
-  const nomeArquivo = MAPA_TRILHAS[numeroPagina];
- 
-  // Página sem trilha definida: para o que estiver tocando.
-  if (!nomeArquivo) {
-    audioEl.pause();
-    arquivoTrilhaAtual = null;
+  const config = normalizarTrilha(MAPA_TRILHAS[numeroPagina]);
+
+  if (!audioDesbloqueado) {
+    paginaPendente = numeroPagina; // memoriza; toca assim que desbloquear
     return;
   }
- 
-  // Mesmo arquivo que já está tocando (ex: página 5 e 6 usam a mesma
-  // faixa): deixa continuar de onde está, sem reiniciar.
-  if (nomeArquivo === arquivoTrilhaAtual) return;
- 
-  arquivoTrilhaAtual = nomeArquivo;
-  audioEl.src = `${CONFIG.pastaAudio}/${nomeArquivo}`;
- 
-  if (audioDesbloqueado) {
-    audioEl.play().catch(() => {});
+
+  // Página sem trilha definida: para a trilha de fundo, se houver.
+  if (!config) {
+    pararTrilhaDeFundo();
+    return;
   }
+
+  if (config.efeito) {
+    tocarEfeitoUmaVez(config);
+    return;
+  }
+
+  tocarTrilhaDeFundo(config);
 }
- 
+
 function desbloquearAudio() {
   audioDesbloqueado = true;
- 
+  garantirContexto();
+
   if (avisoAudioEl) {
     avisoAudioEl.classList.add('escondido');
   }
- 
-  // Se o leitor já está numa página com trilha, começa a tocar agora.
-  if (audioEl.src) {
-    audioEl.play().catch(() => {});
+
+  // Se o leitor já estava numa página com trilha antes do desbloqueio,
+  // começa a tocar agora.
+  if (paginaPendente !== null) {
+    tocarFaixaDaPagina(paginaPendente);
+    paginaPendente = null;
   }
 }
  
