@@ -139,13 +139,8 @@ const btnTopo = document.getElementById('btn-topo');
 const avisoAudioEl = document.getElementById('aviso-audio');
  
 // ---------- Estado do áudio ----------
-<<<<<<< HEAD
-const audioEl = new Audio(); // toca uma vez só (sem loop)
-const audioHoverEl = new Audio(); // efeito sonoro ao passar o mouse num personagem — toca por cima da trilha, sem interromper ela
-=======
 let ctx = null;
 let masterGain = null;
->>>>>>> ee5f25992e7f743c4eeef920e6649778e5acd249
 let audioDesbloqueado = false;
 let paginaPendente = null; // página atual, tocada assim que o áudio for desbloqueado
 let trilhaDeFundo = null; // { source, gain, chave } — só a trilha contínua
@@ -340,23 +335,62 @@ function desbloquearAudio() {
   }
 }
  
-/**
- * Toca o som de um personagem ao passar o mouse (personagem.somHover).
- * Usa audioHoverEl — um elemento separado da trilha de fundo — então
- * os dois tocam ao mesmo tempo, um por cima do outro, sem se
- * interromper.
- */
-function tocarSomHover(nomeArquivo) {
-  if (!nomeArquivo || !audioDesbloqueado) return;
- 
-  audioHoverEl.src = `${CONFIG.pastaAudio}/${nomeArquivo}`;
-  audioHoverEl.currentTime = 0; // garante que sempre recomeça do zero a cada hover
-  audioHoverEl.play().catch(() => {});
+// Volume que a trilha de fundo assume enquanto um som de personagem
+// toca por cima dela ("duck"), e o tempo da rampa pra ir até lá e
+// pra voltar ao normal depois. 0.25 = 25% do volume original.
+const VOLUME_TRILHA_ABAIXADO = 0.25;
+const DURACAO_ABAIXAR_VOLUME = 0.15; // segundos
+const DURACAO_RESTAURAR_VOLUME = 0.35; // segundos
+
+// Abaixa o volume da trilha de fundo (se houver alguma tocando) numa
+// rampa suave. cancelScheduledValues() interrompe qualquer rampa
+// anterior ainda em andamento (ex: usuário passou o mouse de um
+// personagem pro outro rapidamente), pra sempre partir do volume
+// ATUAL, sem "saltos".
+function abaixarVolumeDaTrilha() {
+  if (!trilhaDeFundo) return;
+  const agora = ctx.currentTime;
+  trilhaDeFundo.gain.gain.cancelScheduledValues(agora);
+  trilhaDeFundo.gain.gain.linearRampToValueAtTime(VOLUME_TRILHA_ABAIXADO, agora + DURACAO_ABAIXAR_VOLUME);
 }
- 
-/** Para o som de hover assim que o mouse sai de cima do personagem. */
+
+// Devolve a trilha de fundo ao volume normal.
+function restaurarVolumeDaTrilha() {
+  if (!trilhaDeFundo) return;
+  const agora = ctx.currentTime;
+  trilhaDeFundo.gain.gain.cancelScheduledValues(agora);
+  trilhaDeFundo.gain.gain.linearRampToValueAtTime(1, agora + DURACAO_RESTAURAR_VOLUME);
+}
+
+/**
+ * Toca o som de um personagem ao passar o mouse (personagem.somHover),
+ * usando a mesma engine (AudioContext + buffers) da trilha de fundo,
+ * em vez de um <audio> separado — assim os dois convivem no mesmo
+ * grafo de áudio, o que é o que permite abaixar o volume de um
+ * enquanto o outro toca.
+ *
+ * A trilha de fundo é abaixada ("duck") assim que o som do
+ * personagem começa, e volta ao volume normal em pararSomHover(),
+ * quando o mouse sai de cima dele — não quando o som termina, pra
+ * ficar abaixada durante todo o tempo em que o personagem está em
+ * destaque, mesmo que o áudio dele seja mais curto que o hover.
+ */
+async function tocarSomHover(nomeArquivo) {
+  if (!nomeArquivo || !audioDesbloqueado) return;
+
+  abaixarVolumeDaTrilha();
+
+  const buffer = await carregarBuffer(nomeArquivo);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = false;
+  source.connect(masterGain);
+  source.start(0);
+}
+
+/** Devolve a trilha de fundo ao volume normal quando o mouse sai de cima do personagem. */
 function pararSomHover() {
-  audioHoverEl.pause();
+  restaurarVolumeDaTrilha();
 }
 
 /**
@@ -565,9 +599,8 @@ function observarPaginaVisivel() {
           if (ehPaginaDeHistoria) {
             tocarFaixaDaPagina(numero);
           } else {
-            // Chegou na tela de "fim de ramificação": para a música.
-            audioEl.pause();
-            arquivoTrilhaAtual = null;
+            // Chegou na tela de "fim de ramificação": para a trilha de fundo.
+            pararTrilhaDeFundo();
           }
         }
       });
