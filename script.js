@@ -13,7 +13,38 @@ const CONFIG = {
 // Escolhendo o "Bandido" o leitor segue a história principal (essas
 // páginas aqui); escolhendo qualquer outro personagem, ele entra na
 // ramificação daquele personagem (ver RAMIFICACOES logo abaixo).
-const PAGINAS_HISTORIA_PRINCIPAL = [14, 15, 16, 17, 18, 19, 20];
+// Marcador do "Jogo do Bicho" dentro de uma sequência de páginas. Onde
+// ele aparece na lista, entra o jogo; as páginas que vêm DEPOIS dele
+// só são criadas no documento quando as 4 fatias forem reveladas — ou
+// seja, antes disso não existe nada abaixo do jogo pra onde rolar.
+// (Use no máximo uma vez por sequência.)
+const ID_PAGINA_JOGO = 'jogo-bicho';
+
+const JOGO_DO_BICHO = {
+  // Uma imagem por aposta (dentro de CONFIG.pasta). Lidas da esquerda
+  // pra direita, formando um único quadro horizontal. O jogo tem
+  // exatamente uma rodada por fatia. Se a imagem não existir, aparece
+  // um espaço reservado ("Fatia 1"...) pra testar sem os arquivos.
+  personagem:'personagem.png',
+  fatias: ['fatia1.png', 'fatia2.png', 'fatia3.png', 'fatia4.png'],
+  razaoQuadro: 1055 / 592, // proporção do quadro completo em cada fatia
+  bichos: [
+    'Avestruz', 'Águia', 'Burro', 'Borboleta', 'Cachorro',
+    'Cabra', 'Carneiro', 'Camelo', 'Cobra', 'Coelho',
+    'Cavalo', 'Elefante', 'Galo', 'Gato', 'Jacaré',
+    'Leão', 'Macaco', 'Porco', 'Pavão', 'Peru',
+    'Touro', 'Tigre', 'Urso', 'Veado', 'Vaca',
+  ],
+  tempos: { // em milissegundos
+    antesDaFatia: 800,     // do resultado até a fatia aparecer
+    resultado: 2200,       // do clique até a tabela voltar ao normal
+    aposUltimaFatia: 1200, // da última fatia até liberar a continuação
+  },
+};
+
+// O jogo entra depois da página 15 da história principal (mude a
+// posição do marcador se quiser em outro ponto).
+const PAGINAS_HISTORIA_PRINCIPAL = [14, 15, 16,ID_PAGINA_JOGO, 17, 18, 19, 20];
  
 // Sequência de páginas de cada ramificação (a história de cada
 // personagem). Os números aqui são só um EXEMPLO de 3 páginas cada,
@@ -53,13 +84,13 @@ const RAMIFICACOES = {
 const MAPA_TRILHAS = {
   1: null,
   2: 'antecipacao.wav',
-  3: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 2.5, loopEnd: 40 },
+  3: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 2.8, loopEnd: 40 },
   4: { arquivo: 'sfx/record-scratch-2.mp3', efeito: true, pararFundo: true },
   5: null,
   6: 'trilha_fundo_principal.wav',
   7: 'trilha_fundo_principal.wav',
   8: 'sfx/radio_policia.wav',
-  9: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 0, loopEnd: 15 },
+  9: { arquivo: 'tema_carcara-sombrio-001.wav', loopStart: 20, loopEnd: 40 },
   10: 'sfx/transito_policia.wav',
   11: 'trilha_fundo_principal.wav',
   12: {arquivo:'sfx/harp.wav',efeito: true, pararFundo:true},
@@ -69,10 +100,40 @@ const MAPA_TRILHAS = {
   16: 'trilha_fundo_principal.wav',
   17: 'trilha_frenetica.wav',
   18: 'trilha_frenetica.wav',
-  19: null,
+  19: 'carcara-falha.wav',
   20: null,
   21: 'micro_interacoes/mocroint-bebe.wav',
-
+  [ID_PAGINA_JOGO]: 'trilha_frenetica.wav', // troque por um arquivo pra ter trilha durante o jogo
+  26: {
+    arquivo: 'sfx/whoosh.wav',
+    efeito: true,
+    pararFundo:true
+  },
+  27: {
+    arquivo: 'sfx/punch.mp3',
+    efeito: true,
+    pararFundo:true
+  },
+  28: {
+    arquivo: 'sfx/punch.mp3',
+    efeito: true,
+    pararFundo:true
+  },
+  29: {
+    arquivo: 'sfx/gun-shot.mp3',
+    efeito: true,
+    pararFundo:true
+  },
+  32: {
+    arquivo: 'sfx/whoosh.wav',
+    efeito: true,
+    pararFundo:true
+  },
+  33: {
+    arquivo: 'sfx/gun-shot.mp3',
+    efeito: true,
+    pararFundo:true
+  },
 };
 
 // Personagens com destaque ao passar o mouse, por página.
@@ -235,7 +296,10 @@ async function tocarTrilhaDeFundo(config) {
 
   // Se o usuário já saiu dessa página enquanto o arquivo carregava,
   // descarta — outra chamada mais recente já deve estar em curso.
-  const configAtual = normalizarTrilha(MAPA_TRILHAS[paginaAtual]);
+  const paginaComTrilha = String(paginaAtual).startsWith('jogo-fatia-')
+    ? ID_PAGINA_JOGO
+    : paginaAtual;
+  const configAtual = normalizarTrilha(MAPA_TRILHAS[paginaComTrilha]);
   if (!configAtual || chaveDaTrilha(configAtual) !== chave) return;
 
   const loopEnd = config.loopEnd ?? buffer.duration;
@@ -541,34 +605,195 @@ function limparContinuacao() {
  * termina normalmente sem botão — é o caso da história principal, que
  * segue até o fim de verdade.
  */
-function seguirParaRamificacao(sequenciaDeNumeros, nomePersonagem) {
-  limparContinuacao();
- 
-  sequenciaDeNumeros.forEach((numero) => {
-    const elemento = criarElementoDaPagina(numero);
-    leitorEl.appendChild(elemento);
-    if (observerPaginas) observerPaginas.observe(elemento);
-    ordemAtual.push(numero);
-  });
- 
+function inserirNoLeitor(elemento, chaveNaOrdem) {
+  leitorEl.appendChild(elemento);
+  if (observerPaginas) observerPaginas.observe(elemento);
+  ordemAtual.push(chaveNaOrdem);
+}
+
+/**
+ * Insere no documento as páginas de uma sequência, na ordem. Ao achar o
+ * marcador do jogo, insere a página do jogo e PARA: o restante da
+ * sequência (e o bloco de fim, se houver) só é anexado quando o jogo
+ * chama o callback, depois de revelar a última fatia.
+ */
+function anexarSequencia(sequencia, nomePersonagem) {
+  for (let i = 0; i < sequencia.length; i++) {
+    const item = sequencia[i];
+
+    if (item === ID_PAGINA_JOGO) {
+      const restante = sequencia.slice(i + 1);
+      const jogo = criarPaginaDoJogo(() => anexarSequencia(restante, nomePersonagem));
+      inserirNoLeitor(jogo, ID_PAGINA_JOGO);
+      return;
+    }
+
+    inserirNoLeitor(criarElementoDaPagina(item), item);
+  }
+
   if (nomePersonagem) {
     const blocoFim = criarBlocoFimRamificacao(nomePersonagem);
-    leitorEl.appendChild(blocoFim);
-    if (observerPaginas) observerPaginas.observe(blocoFim);
-    ordemAtual.push(blocoFim.dataset.pagina);
+    inserirNoLeitor(blocoFim, blocoFim.dataset.pagina);
   }
- 
+}
+
+function seguirParaRamificacao(sequenciaDeNumeros, nomePersonagem) {
+  limparContinuacao();
+  anexarSequencia(sequenciaDeNumeros, nomePersonagem);
+
   // A primeira página nova é a que vem logo depois da última página
   // da SEQUENCIA_INICIAL dentro de ordemAtual.
   irParaPagina(ordemAtual[SEQUENCIA_INICIAL.length]);
 }
- 
+
 /** Botão "voltar pra seleção": limpa a ramificação e volta pra página 13. */
 function voltarParaSelecao() {
   limparContinuacao();
   irParaPagina(CONFIG.ultimaPaginaAntesDaRamificacao);
 }
- 
+
+function criarPaginaDaFatia(arquivo, indice) {
+  const pagina = document.createElement('div');
+  pagina.className = 'pagina pagina-jogo-fatia';
+  pagina.dataset.pagina = `jogo-fatia-${indice + 1}`;
+  pagina.dataset.jogoFatia = indice;
+
+  const img = document.createElement('img');
+  img.src = `${CONFIG.pasta}/${arquivo}`;
+  img.alt = `Quadro após a aposta ${indice + 1}`;
+  img.loading = 'eager';
+  pagina.appendChild(img);
+
+  return pagina;
+}
+
+/**
+ * Cria a página do Jogo do Bicho. O herói (Carcará) aposta num bicho, o
+ * bandido sorteia SEMPRE outro (trapaça), e a cada derrota uma página de
+ * fatia é inserida abaixo do jogo. Depois da última fatia, chama
+ * aoConcluir() — só então as páginas seguintes passam a existir.
+ */
+function criarPaginaDoJogo(aoConcluir) {
+  const { bichos, fatias, razaoQuadro, tempos } = JOGO_DO_BICHO;
+  const numeroDe = (indice) => String(indice + 1).padStart(2, '0');
+
+  const container = document.createElement('div');
+  container.className = 'pagina pagina-jogo';
+  container.dataset.pagina = ID_PAGINA_JOGO;
+  container.dataset.jogoConcluido = 'false';
+  container.style.setProperty('--razao-quadro', razaoQuadro);
+
+  // Ignora timers de um jogo que já saiu da tela (leitor trocou de ramificação).
+  const agendar = (funcao, ms) => setTimeout(() => { if (container.isConnected) funcao(); }, ms);
+
+  function rotular(botao, numero, texto) {
+    const n = document.createElement('span');
+    n.className = 'bicho-num';
+    n.textContent = numero;
+    const t = document.createElement('span');
+    t.className = 'bicho-nome';
+    t.textContent = texto;
+    botao.replaceChildren(n, t);
+  }
+
+  // --- Tabela de escolha ---
+  const grade = document.createElement('div');
+  grade.className = 'jogo-grade';
+
+  const botoes = bichos.map((nome, indice) => {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'bicho-btn';
+    rotular(botao, numeroDe(indice), nome);
+    botao.addEventListener('click', () => apostar(indice));
+    grade.appendChild(botao);
+    return botao;
+  });
+
+  const area = document.createElement('div');
+  area.className = 'jogo-area';
+  area.append(grade);
+
+  const personagem = document.createElement('div');
+  personagem.className = 'jogo-personagem';
+
+  const imgPersonagem = document.createElement('img');
+  imgPersonagem.alt = 'Personagem';
+  imgPersonagem.addEventListener('error', () => {
+    imgPersonagem.remove();
+    const reserva = document.createElement('span');
+    reserva.className = 'jogo-placeholder';
+    reserva.textContent = 'Personagem';
+    personagem.appendChild(reserva);
+  }, { once: true });
+  imgPersonagem.src = `${CONFIG.pasta}/${JOGO_DO_BICHO.personagem}`;
+  personagem.appendChild(imgPersonagem);
+
+  container.append(area, personagem);
+
+  // --- Lógica ---
+  let rodadas = 0;
+  let ocupado = false; // true enquanto o resultado de uma aposta está na tela
+  let paginaFatiaAtual = null;
+
+  function restaurarTabela() {
+    botoes.forEach((botao, indice) => {
+      botao.className = 'bicho-btn';
+      rotular(botao, numeroDe(indice), bichos[indice]);
+    });
+    grade.classList.remove('ocupada');
+    ocupado = false;
+  }
+
+  function finalizar() {
+    botoes.forEach((botao) => { botao.disabled = true; });
+    container.dataset.jogoConcluido = 'true';
+    aoConcluir(); // só agora as páginas seguintes entram no documento
+  }
+
+  function carregarFatia(indice) {
+    if (paginaFatiaAtual) {
+      if (observerPaginas) observerPaginas.unobserve(paginaFatiaAtual);
+      ordemAtual = ordemAtual.filter((item) => item !== paginaFatiaAtual.dataset.pagina);
+      paginaFatiaAtual.remove();
+    }
+
+    const pagina = criarPaginaDaFatia(fatias[indice], indice);
+    paginaFatiaAtual = pagina;
+    inserirNoLeitor(pagina, pagina.dataset.pagina);
+
+    if (indice === fatias.length - 1) {
+      agendar(finalizar, tempos.aposUltimaFatia);
+    } else {
+      restaurarTabela();
+    }
+
+    setTimeout(() => irParaPagina(pagina.dataset.pagina), 100);
+  }
+
+  function apostar(escolhido) {
+    if (ocupado || rodadas >= fatias.length) return;
+    ocupado = true;
+    grade.classList.add('ocupada');
+
+    // Trapaça: sorteia qualquer bicho, MENOS o escolhido.
+    const sorteado = (escolhido + 1 + Math.floor(Math.random() * (bichos.length - 1))) % bichos.length;
+
+    botoes[escolhido].classList.add('perdeu');
+    rotular(botoes[escolhido], numeroDe(escolhido), 'PERDEU');
+    botoes[sorteado].classList.add('ganhou');
+    rotular(botoes[sorteado], numeroDe(sorteado), 'GANHOU!');
+
+    const indiceDaFatia = rodadas;
+    rodadas++;
+    agendar(() => {
+      carregarFatia(indiceDaFatia);
+    }, tempos.antesDaFatia);
+  }
+
+  return container;
+}
+
 function criarPaginas() {
   const fragmento = document.createDocumentFragment();
  
@@ -598,6 +823,8 @@ function observarPaginaVisivel() {
  
           if (ehPaginaDeHistoria) {
             tocarFaixaDaPagina(numero);
+          } else if (valor === ID_PAGINA_JOGO || valor.startsWith('jogo-fatia-')) {
+            tocarFaixaDaPagina(ID_PAGINA_JOGO);
           } else {
             // Chegou na tela de "fim de ramificação": para a trilha de fundo.
             pararTrilhaDeFundo();
@@ -651,7 +878,24 @@ function irParaPaginaAnterior() {
   if (indice <= 0) return;
   irParaPagina(ordemAtual[indice - 1]);
 }
- 
+
+function indiceDaFatiaDoJogo(valor) {
+  const elemento = document.querySelector(`.pagina[data-pagina="${valor}"]`);
+  return elemento ? Number(elemento.dataset.jogoFatia) : -1;
+}
+
+function paginaMaisProximaDoCentro() {
+  const centroDaTela = window.innerHeight / 2;
+  return Array.from(document.querySelectorAll('.pagina')).reduce((maisProxima, pagina) => {
+    const caixa = pagina.getBoundingClientRect();
+    const distancia = Math.abs((caixa.top + caixa.bottom) / 2 - centroDaTela);
+    if (!maisProxima || distancia < maisProxima.distancia) {
+      return { valor: pagina.dataset.pagina, distancia };
+    }
+    return maisProxima;
+  }, null)?.valor;
+}
+
 function controlarSetasDoTeclado() {
   document.addEventListener('keydown', (evento) => {
     if (evento.key === 'ArrowDown') {
@@ -689,7 +933,29 @@ function controlarRolagemDoMouse() {
  
       if (bloqueadoPorRolagem) return;
       bloqueadoPorRolagem = true;
- 
+
+      const paginaVisivel = paginaMaisProximaDoCentro();
+      const indiceDaFatia = indiceDaFatiaDoJogo(paginaVisivel);
+      if (indiceDaFatia >= 0) {
+        const indiceNaSequencia = ordemAtual.indexOf(paginaVisivel);
+        const destino = indiceDaFatia < JOGO_DO_BICHO.fatias.length - 1
+          ? ID_PAGINA_JOGO
+          : ordemAtual[indiceNaSequencia + 1];
+        irParaPagina(destino);
+        setTimeout(() => {
+          bloqueadoPorRolagem = false;
+        }, 700);
+        return;
+      }
+
+      const jogo = document.querySelector(`.pagina[data-pagina="${ID_PAGINA_JOGO}"]`);
+      if (paginaAtual === ID_PAGINA_JOGO && jogo?.dataset.jogoConcluido !== 'true') {
+        setTimeout(() => {
+          bloqueadoPorRolagem = false;
+        }, 700);
+        return;
+      }
+
       if (evento.deltaY > 0) {
         irParaProximaPagina();
       } else if (evento.deltaY < 0) {
