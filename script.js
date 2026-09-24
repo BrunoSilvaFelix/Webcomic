@@ -214,6 +214,9 @@ let masterGain = null;
 let audioDesbloqueado = false;
 let paginaPendente = null; // página atual, tocada assim que o áudio for desbloqueado
 let trilhaDeFundo = null; // { source, gain, chave } — só a trilha contínua
+let somHoverAtual = null;
+let idSomHover = 0;
+let hotspotComSomHover = null;
 const cacheDeBuffers = new Map(); // nomeArquivo -> Promise<AudioBuffer>, evita baixar 2x
  
 // ---------- Estado da navegação ----------
@@ -452,22 +455,39 @@ function restaurarVolumeDaTrilha() {
  * ficar abaixada durante todo o tempo em que o personagem está em
  * destaque, mesmo que o áudio dele seja mais curto que o hover.
  */
-async function tocarSomHover(nomeArquivo) {
+async function tocarSomHover(nomeArquivo, hotspot) {
   if (!nomeArquivo || !audioDesbloqueado) return;
 
+  pararSomHover(false);
+  const idAtual = ++idSomHover;
+  hotspotComSomHover = hotspot;
   abaixarVolumeDaTrilha();
 
   const buffer = await carregarBuffer(nomeArquivo);
+  if (idAtual !== idSomHover || hotspotComSomHover !== hotspot) return;
+
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   source.loop = false;
   source.connect(masterGain);
   source.start(0);
+  somHoverAtual = source;
 }
 
 /** Devolve a trilha de fundo ao volume normal quando o mouse sai de cima do personagem. */
-function pararSomHover() {
-  restaurarVolumeDaTrilha();
+function pararSomHover(restaurar = true, hotspot = null) {
+  if (hotspot && hotspotComSomHover !== hotspot) return;
+
+  idSomHover++;
+  hotspotComSomHover = null;
+
+  if (somHoverAtual) {
+    somHoverAtual.stop();
+    somHoverAtual.disconnect();
+    somHoverAtual = null;
+  }
+
+  if (restaurar) restaurarVolumeDaTrilha();
 }
 
 /**
@@ -507,8 +527,8 @@ function criarDestaquePersonagem(personagem) {
     }
   });
 
-  hotspot.addEventListener('mouseenter', () => tocarSomHover(personagem.somHover));
-  hotspot.addEventListener('mouseleave', pararSomHover);
+  hotspot.addEventListener('mouseenter', () => tocarSomHover(personagem.somHover, hotspot));
+  hotspot.addEventListener('mouseleave', () => pararSomHover(true, hotspot));
  
   const camada = document.createElement('div');
   camada.className = 'personagem-camada';
