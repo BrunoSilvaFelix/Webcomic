@@ -224,6 +224,8 @@ const SEQUENCIA_INICIAL = Array.from(
 let ordemAtual = [...SEQUENCIA_INICIAL];
 let paginaAtual = 1;
 let bloqueadoPorRolagem = false; // evita disparar várias páginas de uma vez no mesmo gesto de scroll
+let toqueInicialY = null; // posição Y (dedo) no início do gesto de toque atual
+let toqueJaMudouDePagina = false; // trava POR GESTO: só deixa mudar 1 página mesmo segurando o dedo
 let observerPaginas = null; // guardado aqui pra poder observar páginas criadas depois do início
 let contadorBlocoFim = 0; // usado só pra dar um id único a cada bloco "fim de ramificação"
  
@@ -970,10 +972,84 @@ function controlarRolagemDoMouse() {
   );
 }
  
+/**
+ * Equivalente do controlarRolagemDoMouse(), só que pra toque (celular
+ * e tablet) — o evento "wheel" não existe em telas de toque, então o
+ * scroll ali depende só do gesto de arrastar o dedo, calculado aqui
+ * "na mão" com touchstart/touchmove/touchend.
+ *
+ * touchstart: guarda em toqueInicialY a posição Y de onde o dedo
+ * encostou, e reseta a trava do gesto atual.
+ *
+ * touchmove: compara a posição atual do dedo com toqueInicialY. Se a
+ * diferença já passar de LIMIAR_TOQUE (poucos pixels — um deslize
+ * bem pequeno já conta), muda de página, IGUAL ao scroll do mouse.
+ * O preventDefault() roda em toda chamada (mesmo antes do limiar),
+ * pra o navegador nunca chegar a rolar do jeito nativo dele — sem
+ * isso, daria pra ver a página arrastando "solta" por baixo do nosso
+ * pulo automático.
+ *
+ * toqueJaMudouDePagina é o que impede a pessoa de "atravessar" várias
+ * páginas segurando o dedo na tela e arrastando bem longe: depois da
+ * primeira mudança de página do gesto, essa trava fica ligada até o
+ * dedo soltar (touchend) — só então um novo gesto (novo touchstart)
+ * pode mudar de página de novo.
+ */
+function controlarToqueNoCelular() {
+  const LIMIAR_TOQUE = 15; // pixels — deslize mínimo pra contar como intencional
+
+  window.addEventListener(
+    'touchstart',
+    (evento) => {
+      toqueInicialY = evento.touches[0].clientY;
+      toqueJaMudouDePagina = false;
+    },
+    { passive: true }
+  );
+
+  window.addEventListener(
+    'touchmove',
+    (evento) => {
+      evento.preventDefault();
+
+      if (toqueInicialY === null || toqueJaMudouDePagina || bloqueadoPorRolagem) return;
+
+      const posicaoAtual = evento.touches[0].clientY;
+      const diferenca = toqueInicialY - posicaoAtual; // positivo = dedo subiu na tela
+
+      if (Math.abs(diferenca) < LIMIAR_TOQUE) return;
+
+      toqueJaMudouDePagina = true;
+      bloqueadoPorRolagem = true;
+
+      if (diferenca > 0) {
+        irParaProximaPagina(); // dedo subiu = conteúdo "sobe" = próxima página
+      } else {
+        irParaPaginaAnterior();
+      }
+
+      setTimeout(() => {
+        bloqueadoPorRolagem = false;
+      }, 700);
+    },
+    { passive: false }
+  );
+
+  window.addEventListener(
+    'touchend',
+    () => {
+      toqueInicialY = null;
+      toqueJaMudouDePagina = false;
+    },
+    { passive: true }
+  );
+}
+
 // ---------- Inicialização ----------
 criarPaginas();
 observarPaginaVisivel();
 controlarBotaoTopo();
 controlarSetasDoTeclado();
 controlarRolagemDoMouse();
+controlarToqueNoCelular();
 document.addEventListener('click', desbloquearAudio, { once: true });
