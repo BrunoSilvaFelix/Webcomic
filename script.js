@@ -269,8 +269,20 @@ function carregarBuffer(nomeArquivo) {
   }
 
   const promessa = fetch(`${CONFIG.pastaAudio}/${nomeArquivo}`)
-    .then((resposta) => resposta.arrayBuffer())
-    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer));
+    .then((resposta) => {
+      if (!resposta.ok) throw new Error(`Falha ao buscar ${nomeArquivo}: ${resposta.status}`);
+      return resposta.arrayBuffer();
+    })
+    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
+    .catch((erro) => {
+      // Em celular, uma oscilação de rede pode derrubar o fetch. Sem
+      // isso, a promise rejeitada ficaria presa no cache pra sempre e
+      // essa faixa nunca mais tocaria na mesma sessão. Removendo do
+      // cache, a próxima tentativa de tocar essa faixa baixa de novo.
+      cacheDeBuffers.delete(nomeArquivo);
+      console.warn(`Não foi possível carregar o áudio "${nomeArquivo}":`, erro);
+      throw erro;
+    });
 
   cacheDeBuffers.set(nomeArquivo, promessa);
   return promessa;
@@ -363,10 +375,24 @@ function pararTrilhaDeFundo() {
   atual.source.stop(ctx.currentTime + 0.9);
 }
 
+// Normaliza um "número de página" pra comparação: as fatias do Jogo
+// do Bicho (ex: "jogo-fatia-2") contam como a própria página do jogo.
+function paginaEfetiva(numeroPagina) {
+  return String(numeroPagina).startsWith('jogo-fatia-') ? ID_PAGINA_JOGO : numeroPagina;
+}
+
 // Toca um efeito avulso uma única vez. Por padrão soa por cima da
 // trilha de fundo, sem afetá-la; com pararFundo: true, corta a
 // trilha de fundo em seco antes de tocar (efeito "record scratch").
-async function tocarEfeitoUmaVez(config) {
+//
+// numeroPagina é a página que pediu esse efeito. Igual a
+// tocarTrilhaDeFundo(), o carregamento do arquivo é assíncrono — numa
+// rede mais lenta (típico de celular), o usuário pode já ter saído
+// dessa página quando o buffer termina de carregar. Sem essa
+// checagem, o efeito tocaria "atrasado", por cima de qualquer outro
+// som que já tenha começado enquanto isso — daí a sensação de sons
+// sobrepostos.
+async function tocarEfeitoUmaVez(config, numeroPagina) {
   if (config.pararFundo && trilhaDeFundo) {
     const atual = trilhaDeFundo;
     trilhaDeFundo = null;
@@ -375,6 +401,9 @@ async function tocarEfeitoUmaVez(config) {
   }
 
   const buffer = await carregarBuffer(config.arquivo);
+
+  if (paginaEfetiva(paginaAtual) !== paginaEfetiva(numeroPagina)) return;
+
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   source.loop = false;
@@ -397,7 +426,7 @@ function tocarFaixaDaPagina(numeroPagina) {
   }
 
   if (config.efeito) {
-    tocarEfeitoUmaVez(config);
+    tocarEfeitoUmaVez(config, numeroPagina);
     return;
   }
 
@@ -407,6 +436,14 @@ function tocarFaixaDaPagina(numeroPagina) {
 function desbloquearAudio() {
   audioDesbloqueado = true;
   garantirContexto();
+
+  // Em alguns navegadores mobile (principalmente iOS), o AudioContext
+  // pode nascer em estado "suspended" mesmo criado dentro do gesto do
+  // usuário. Sem retomar explicitamente, o áudio fica mudo sem erro
+  // nenhum visível.
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
 
   if (avisoAudioEl) {
     avisoAudioEl.classList.add('escondido');
@@ -1102,3 +1139,8 @@ controlarSetasDoTeclado();
 controlarRolagemDoMouse();
 controlarToqueNoCelular();
 document.addEventListener('click', desbloquearAudio, { once: true });
+// No celular, o gesto principal de navegação é arrastar o dedo. Como
+// controlarToqueNoCelular() chama preventDefault() no touchmove, o
+// navegador pode nunca sintetizar um "click" depois do touchend —
+// então esse listener extra garante o desbloqueio também por toque.
+document.addEventListener('touchend', desbloquearAudio, { once: true, passive: true });
