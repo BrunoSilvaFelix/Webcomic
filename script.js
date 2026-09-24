@@ -58,6 +58,15 @@ const RAMIFICACOES = {
   estatua: [30, 31],
   chapeuzinho: [32, 33],
 };
+
+const TRILHA_FALHA = 'carcara-falha.wav';
+
+const FINAIS_RAMIFICACOES = {
+  bebe: { imagem: 'fim-bebe.png' },
+  velho: { imagem: 'fim-velho.png' },
+  estatua: { imagem: 'fim-estatua.png' },
+  chapeuzinho: { imagem: 'fim-chapeuzinho.png' },
+};
  
 // Trilha sonora de cada página. Deixe "null" nas páginas sem música.
 //
@@ -99,8 +108,8 @@ const MAPA_TRILHAS = {
   15: null,
   16: 'trilha_fundo_principal.wav',
   17: 'trilha_frenetica.wav',
-  18: 'trilha_frenetica.wav',
-  19: 'carcara-falha.wav',
+  18: 'carcara_suspense.wav',
+  19: 'carcara_suspense.wav',
   20: null,
   21: 'micro_interacoes/mocroint-bebe.wav',
   [ID_PAGINA_JOGO]: 'trilha_frenetica.wav', // troque por um arquivo pra ter trilha durante o jogo
@@ -301,7 +310,9 @@ async function tocarTrilhaDeFundo(config) {
   const paginaComTrilha = String(paginaAtual).startsWith('jogo-fatia-')
     ? ID_PAGINA_JOGO
     : paginaAtual;
-  const configAtual = normalizarTrilha(MAPA_TRILHAS[paginaComTrilha]);
+  const elementoAtual = document.querySelector(`.pagina[data-pagina="${paginaAtual}"]`);
+  const entradaAtual = elementoAtual?.dataset.trilha ?? MAPA_TRILHAS[paginaComTrilha];
+  const configAtual = normalizarTrilha(entradaAtual);
   if (!configAtual || chaveDaTrilha(configAtual) !== chave) return;
 
   const loopEnd = config.loopEnd ?? buffer.duration;
@@ -486,7 +497,11 @@ function criarDestaquePersonagem(personagem) {
  
   hotspot.addEventListener('click', () => {
     if (personagem.ramificacao) {
-      seguirParaRamificacao(RAMIFICACOES[personagem.ramificacao], personagem.nome);
+      seguirParaRamificacao(
+        RAMIFICACOES[personagem.ramificacao],
+        personagem.nome,
+        personagem.ramificacao
+      );
     } else {
       seguirParaRamificacao(PAGINAS_HISTORIA_PRINCIPAL, null);
     }
@@ -547,29 +562,32 @@ function criarElementoDaPagina(numero) {
  * Cada chamada recebe um id único (fim-1, fim-2...) porque o leitor
  * pode entrar em ramificações diferentes várias vezes na mesma visita.
  */
-function criarBlocoFimRamificacao(nomePersonagem) {
+function criarBlocoFimRamificacao(nomePersonagem, chaveRamificacao) {
   contadorBlocoFim++;
   const id = `fim-${contadorBlocoFim}`;
+  const configFinal = FINAIS_RAMIFICACOES[chaveRamificacao] ?? {};
  
   const container = document.createElement('div');
   container.className = 'pagina pagina-fim';
   container.dataset.pagina = id;
+  container.dataset.trilha = TRILHA_FALHA;
  
-  const titulo = document.createElement('p');
-  titulo.className = 'pagina-fim-titulo';
-  if(nomePersonagem == 'Bebê' || nomePersonagem == 'Velho'){
-    titulo.textContent = `Fim da história do ${nomePersonagem}`;
-  }else {
-    titulo.textContent = `Fim da história da ${nomePersonagem}`;
+  const imagem = document.createElement('img');
+  if (configFinal.imagem) {
+    imagem.src = `${CONFIG.pasta}/${configFinal.imagem}`;
   }
- 
+  imagem.alt = `Fim da história do ${nomePersonagem}`;
+
+  const controles = document.createElement('div');
+  controles.className = 'pagina-fim-controles';
+
   const botao = document.createElement('button');
   botao.className = 'btn-selecao';
-  botao.textContent = '← Voltar para a seleção de personagens';
+  botao.textContent = 'Voltar para a seleção de personagens';
   botao.addEventListener('click', voltarParaSelecao);
  
-  container.appendChild(titulo);
-  container.appendChild(botao);
+  controles.appendChild(botao);
+  container.append(imagem, controles);
  
   return container;
 }
@@ -619,13 +637,13 @@ function inserirNoLeitor(elemento, chaveNaOrdem) {
  * sequência (e o bloco de fim, se houver) só é anexado quando o jogo
  * chama o callback, depois de revelar a última fatia.
  */
-function anexarSequencia(sequencia, nomePersonagem) {
+function anexarSequencia(sequencia, nomePersonagem, chaveRamificacao) {
   for (let i = 0; i < sequencia.length; i++) {
     const item = sequencia[i];
 
     if (item === ID_PAGINA_JOGO) {
       const restante = sequencia.slice(i + 1);
-      const jogo = criarPaginaDoJogo(() => anexarSequencia(restante, nomePersonagem));
+      const jogo = criarPaginaDoJogo(() => anexarSequencia(restante, nomePersonagem, chaveRamificacao));
       inserirNoLeitor(jogo, ID_PAGINA_JOGO);
       return;
     }
@@ -634,14 +652,14 @@ function anexarSequencia(sequencia, nomePersonagem) {
   }
 
   if (nomePersonagem) {
-    const blocoFim = criarBlocoFimRamificacao(nomePersonagem);
+    const blocoFim = criarBlocoFimRamificacao(nomePersonagem, chaveRamificacao);
     inserirNoLeitor(blocoFim, blocoFim.dataset.pagina);
   }
 }
 
-function seguirParaRamificacao(sequenciaDeNumeros, nomePersonagem) {
+function seguirParaRamificacao(sequenciaDeNumeros, nomePersonagem, chaveRamificacao = null) {
   limparContinuacao();
-  anexarSequencia(sequenciaDeNumeros, nomePersonagem);
+  anexarSequencia(sequenciaDeNumeros, nomePersonagem, chaveRamificacao);
 
   // A primeira página nova é a que vem logo depois da última página
   // da SEQUENCIA_INICIAL dentro de ordemAtual.
@@ -827,6 +845,12 @@ function observarPaginaVisivel() {
             tocarFaixaDaPagina(numero);
           } else if (valor === ID_PAGINA_JOGO || valor.startsWith('jogo-fatia-')) {
             tocarFaixaDaPagina(ID_PAGINA_JOGO);
+          } else if (entrada.target.dataset.trilha) {
+            if (audioDesbloqueado) {
+              tocarTrilhaDeFundo(normalizarTrilha(entrada.target.dataset.trilha));
+            } else {
+              paginaPendente = valor;
+            }
           } else {
             // Chegou na tela de "fim de ramificação": para a trilha de fundo.
             pararTrilhaDeFundo();
