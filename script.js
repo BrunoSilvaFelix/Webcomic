@@ -104,9 +104,9 @@ const MAPA_TRILHAS = {
   11: 'trilha_fundo_principal.wav',
   12: {arquivo:'sfx/harp.wav',efeito: true, pararFundo:true},
   13: { arquivo: 'carcara_suspense.wav', loopStart: 0, loopEnd: 31 },
-  14: 'trilha_fundo_principal.wav',
+  14: { arquivo: 'trilha_fundo_principal.wav', loopStart: 24, loopEnd:51},
   15: null,
-  16: 'trilha_fundo_principal.wav',
+  16: { arquivo: 'trilha_fundo_principal.wav', loopStart: 24, loopEnd:51},
   17: 'trilha_frenetica.wav',
   18: 'carcara_suspense.wav',
   19: 'carcara_suspense.wav',
@@ -130,6 +130,11 @@ const MAPA_TRILHAS = {
   },
   29: {
     arquivo: 'sfx/gun-shot.mp3',
+    efeito: true,
+    pararFundo:true
+  },
+  31: {
+    arquivo: 'sfx/punch.mp3',
     efeito: true,
     pararFundo:true
   },
