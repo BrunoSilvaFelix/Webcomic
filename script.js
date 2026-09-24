@@ -212,6 +212,10 @@ const PERSONAGENS_INTERATIVOS = {
 const leitorEl = document.getElementById('leitor');
 const btnTopo = document.getElementById('btn-topo');
 const avisoAudioEl = document.getElementById('aviso-audio');
+const telaCarregamentoEl = document.getElementById('tela-carregamento');
+const telaCarregamentoTextoEl = document.getElementById('tela-carregamento-texto');
+const telaCarregamentoBarraEl = document.getElementById('tela-carregamento-barra');
+const botaoComecarEl = document.getElementById('btn-comecar');
  
 // ---------- Estado do áudio ----------
 let ctx = null;
@@ -223,6 +227,7 @@ let somHoverAtual = null;
 let idSomHover = 0;
 let hotspotComSomHover = null;
 const cacheDeBuffers = new Map(); // nomeArquivo -> Promise<AudioBuffer>, evita baixar 2x
+let carregamentoAtivo = true; // true enquanto a tela de carregamento estiver na frente
  
 // ---------- Estado da navegação ----------
 // As páginas de 1 até "ultimaPaginaAntesDaRamificacao" são sempre as
@@ -286,6 +291,100 @@ function carregarBuffer(nomeArquivo) {
 
   cacheDeBuffers.set(nomeArquivo, promessa);
   return promessa;
+}
+
+/**
+ * Reúne, sem repetição, o nome de TODOS os arquivos de áudio usados em
+ * algum lugar da webcomic: as trilhas/efeitos de MAPA_TRILHAS, a
+ * trilha de "fim de ramificação" (TRILHA_FALHA) e os sons de hover dos
+ * personagens interativos. É essa lista que a tela de carregamento usa
+ * pra baixar tudo de uma vez, antes de liberar a leitura.
+ */
+function coletarTodosOsArquivosDeAudio() {
+  const arquivos = new Set();
+
+  if (TRILHA_FALHA) arquivos.add(TRILHA_FALHA);
+
+  Object.values(MAPA_TRILHAS).forEach((entrada) => {
+    const config = normalizarTrilha(entrada);
+    if (config) arquivos.add(config.arquivo);
+  });
+
+  Object.values(PERSONAGENS_INTERATIVOS).forEach((listaDePersonagens) => {
+    listaDePersonagens.forEach((personagem) => {
+      if (personagem.somHover) arquivos.add(personagem.somHover);
+    });
+  });
+
+  return Array.from(arquivos);
+}
+
+/** Atualiza o texto e a barrinha de progresso da tela de carregamento. */
+function atualizarProgressoCarregamento(carregados, total) {
+  if (telaCarregamentoTextoEl) {
+    telaCarregamentoTextoEl.textContent = `Carregando sons… ${carregados}/${total}`;
+  }
+  if (telaCarregamentoBarraEl) {
+    const percentual = total > 0 ? Math.round((carregados / total) * 100) : 100;
+    telaCarregamentoBarraEl.style.width = `${percentual}%`;
+  }
+}
+
+/**
+ * Baixa e decodifica todos os áudios da webcomic em paralelo, mantendo
+ * a tela de carregamento atualizada. Usa Promise.allSettled (em vez de
+ * Promise.all) de propósito: se um arquivo específico falhar (ex: nome
+ * errado, 404), isso não trava a tela de carregamento pra sempre — o
+ * carregamento dos outros arquivos continua normalmente, e o erro fica
+ * só registrado no console. Quando a pessoa passar pela página daquele
+ * áudio que falhou, carregarBuffer() tenta de novo na hora (graças à
+ * correção que já fizemos: falha não fica presa no cache).
+ */
+async function precarregarTodosOsAudios() {
+  garantirContexto(); // precisa existir pra poder decodificar, mesmo sem tocar nada ainda
+
+  const arquivos = coletarTodosOsArquivosDeAudio();
+  const total = arquivos.length;
+  let carregados = 0;
+
+  atualizarProgressoCarregamento(carregados, total);
+
+  await Promise.allSettled(
+    arquivos.map((arquivo) =>
+      carregarBuffer(arquivo)
+        .catch((erro) => {
+          console.warn(`Pré-carregamento: "${arquivo}" falhou, vai tentar de novo na hora de tocar.`, erro);
+        })
+        .finally(() => {
+          carregados++;
+          atualizarProgressoCarregamento(carregados, total);
+        })
+    )
+  );
+}
+
+/** Revela o botão "Toque para começar a leitura" depois do pré-carregamento. */
+function mostrarBotaoComecar() {
+  if (telaCarregamentoTextoEl) {
+    telaCarregamentoTextoEl.textContent = 'Tudo pronto!';
+  }
+  if (botaoComecarEl) {
+    botaoComecarEl.classList.add('visivel');
+  }
+}
+
+/** Esconde (com fade) e remove a tela de carregamento, liberando a navegação. */
+function esconderTelaCarregamento() {
+  carregamentoAtivo = false;
+
+  if (!telaCarregamentoEl) return;
+
+  telaCarregamentoEl.classList.add('escondida');
+  telaCarregamentoEl.addEventListener(
+    'transitionend',
+    () => telaCarregamentoEl.remove(),
+    { once: true }
+  );
 }
 
 // Aceita tanto uma string simples ('arquivo.wav') quanto um objeto
@@ -986,6 +1085,8 @@ function paginaMaisProximaDoCentro() {
 
 function controlarSetasDoTeclado() {
   document.addEventListener('keydown', (evento) => {
+    if (carregamentoAtivo) return;
+
     if (evento.key === 'ArrowDown') {
       evento.preventDefault();
       irParaProximaPagina();
@@ -1018,7 +1119,8 @@ function controlarRolagemDoMouse() {
     'wheel',
     (evento) => {
       evento.preventDefault();
- 
+
+      if (carregamentoAtivo) return;
       if (bloqueadoPorRolagem) return;
       bloqueadoPorRolagem = true;
 
@@ -1098,6 +1200,7 @@ function controlarToqueNoCelular() {
     (evento) => {
       evento.preventDefault();
 
+      if (carregamentoAtivo) return;
       if (toqueInicialY === null || toqueJaMudouDePagina || bloqueadoPorRolagem) return;
 
       const posicaoAtual = evento.touches[0].clientY;
@@ -1144,3 +1247,24 @@ document.addEventListener('click', desbloquearAudio, { once: true });
 // navegador pode nunca sintetizar um "click" depois do touchend —
 // então esse listener extra garante o desbloqueio também por toque.
 document.addEventListener('touchend', desbloquearAudio, { once: true, passive: true });
+
+// O botão "Toque para começar a leitura" da tela de carregamento
+// também serve pra destravar o áudio: é um clique de verdade e
+// deliberado, então cumpre o requisito dos navegadores de que o som só
+// pode começar dentro de um gesto do usuário — ao contrário de um
+// simples deslize de dedo, que às vezes nem chega a virar um "click".
+if (botaoComecarEl) {
+  botaoComecarEl.addEventListener('click', () => {
+    desbloquearAudio();
+    esconderTelaCarregamento();
+  });
+}
+
+// criarPaginas() já deixou as páginas (imagens) sendo montadas; em
+// paralelo, baixa e decodifica todos os áudios da webcomic de uma vez
+// só. Enquanto isso roda, a tela de carregamento bloqueia a navegação
+// (ver os "if (carregamentoAtivo) return" nos handlers de scroll/
+// toque/teclado). Ao terminar, mostra o botão de começar — a partir
+// daí, cada página só solta um áudio que já está pronto no cache,
+// sem esperar nenhum download no meio da leitura.
+precarregarTodosOsAudios().then(mostrarBotaoComecar);

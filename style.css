@@ -164,6 +164,12 @@ body {
   .personagem-camada {
     transition: none;
   }
+
+  .tela-carregamento,
+  .tela-carregamento-botao,
+  .tela-carregamento-barra {
+    transition: none;
+  }
 }
  
 /* Tela de "fim de ramificação" — aparece no final da história de cada
@@ -243,6 +249,71 @@ body {
 .aviso-audio.escondido {
   opacity: 0;
   visibility: hidden;
+}
+
+/* Tela de carregamento — cobre a tela inteira até todos os áudios
+   terem sido baixados/decodificados, e só então libera a leitura. */
+
+.tela-carregamento {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 0.4s ease;
+}
+
+.tela-carregamento.escondida {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tela-carregamento-conteudo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.tela-carregamento-texto {
+  font-family: var(--fonte-corpo);
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.tela-carregamento-barra-fundo {
+  width: min(70vw, 16rem);
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--linha);
+  overflow: hidden;
+}
+
+.tela-carregamento-barra {
+  height: 100%;
+  width: 0%;
+  background: var(--tinta);
+  transition: width 0.2s ease;
+}
+
+/* O botão fica reservado no layout desde o início (pra nada "pular"),
+   mas só aparece de verdade quando os áudios terminam de carregar. */
+.tela-carregamento-botao {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.tela-carregamento-botao.visivel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 
